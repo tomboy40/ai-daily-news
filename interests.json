@@ -1,0 +1,26 @@
+{
+  "maxArticlesPerFeed": 5,
+  "categories": [
+    {
+      "name": "Artificial Intelligence",
+      "feeds": [
+        "https://feeds.arstechnica.com/arstechnica/technology-lab",
+        "https://www.technologyreview.com/feed/"
+      ]
+    },
+    {
+      "name": "Software Engineering",
+      "feeds": [
+        "https://hnrss.org/newest?points=100&count=10",
+        "https://blog.pragmaticengineer.com/rss/"
+      ]
+    },
+    {
+      "name": "Science & Space",
+      "feeds": [
+        "https://www.nasa.gov/rss/dyn/breaking_news.rss",
+        "https://www.newscientist.com/section/news/feed/"
+      ]
+    }
+  ]
+}
