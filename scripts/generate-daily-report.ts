@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import Parser from "rss-parser";
+import { runDailyNewsPipeline } from "../src/pipelines/daily-news.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -407,11 +408,65 @@ async function main(): Promise<void> {
     return;
   }
 
-  // Summarize
+  // Summarize (existing RSS/web pipeline)
   const summary = await summarize(client, llmConfig, allData);
 
+  // ── Tavily-powered search & hierarchical summarization ──────────────────
+  let tavilySection = "";
+  if (process.env.TAVILY_API_KEY) {
+    console.log("\n🔎 Running Tavily search pipeline…");
+    const categoryNames = config.categories.map((c) => c.name);
+    try {
+      const { dailySummary, categorizedNews } = await runDailyNewsPipeline(
+        client,
+        llmConfig,
+        categoryNames,
+        config.maxArticlesPerFeed
+      );
+
+      const tavilyArticleCount = Object.values(categorizedNews).reduce(
+        (s, arr) => s + arr.length,
+        0
+      );
+      console.log(
+        `📊 Tavily pipeline: ${tavilyArticleCount} articles enriched with TL;DRs.`
+      );
+
+      // Build the Tavily section with Daily Glance + per-category TL;DRs
+      const parts: string[] = [];
+      parts.push("## 🗞️ Daily Glance\n");
+      parts.push(dailySummary);
+      parts.push("");
+
+      for (const [cat, articles] of Object.entries(categorizedNews)) {
+        if (articles.length === 0) continue;
+        parts.push(`### ${cat}\n`);
+        for (const a of articles) {
+          parts.push(`**${a.title}**`);
+          parts.push(`> ${a.tldr}`);
+          parts.push(`[Read more →](${a.url})\n`);
+        }
+      }
+
+      tavilySection = parts.join("\n");
+    } catch (err) {
+      console.warn(
+        `⚠ Tavily pipeline failed: ${(err as Error).message}. Continuing with RSS/web results only.`
+      );
+    }
+  } else {
+    console.log(
+      "\nℹ TAVILY_API_KEY not set — skipping Tavily search pipeline."
+    );
+  }
+
+  // Combine both pipelines into the final report
+  const fullReport = tavilySection
+    ? `${tavilySection}\n\n---\n\n${summary}`
+    : summary;
+
   // Write output
-  writeDailyPost(summary);
+  writeDailyPost(fullReport);
   console.log("🎉 Done!");
 }
 
