@@ -1,0 +1,132 @@
+---
+/**
+ * Client-side component that fetches the latest daily news from static JSON
+ * files and renders them in the browser.
+ *
+ * Uses a vanilla <script> tag (no framework dependency) to keep the bundle
+ * size minimal.
+ */
+
+// The base URL is baked in at build time so fetch paths work on GitHub Pages.
+const base = (import.meta.env.BASE_URL ?? '/').replace(/\/+$/, '');
+---
+
+<section id="daily-news" data-base={base}>
+	<p id="news-loading" class="news-status">Loading today's AI news…</p>
+	<p id="news-error" class="news-status" style="display:none;"></p>
+	<div id="news-container"></div>
+</section>
+
+<style>
+	.news-status {
+		text-align: center;
+		color: rgb(var(--gray));
+		font-style: italic;
+	}
+	.news-article {
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 12px;
+		padding: 1.25rem 1.5rem;
+		margin-bottom: 1.25rem;
+		box-shadow: 0 1px 3px rgba(var(--gray), 12%);
+		transition: box-shadow 0.2s ease;
+	}
+	.news-article:hover {
+		box-shadow: 0 4px 12px rgba(var(--gray), 20%);
+	}
+	.news-article h3 {
+		margin: 0 0 0.5rem;
+		font-size: 1.25rem;
+	}
+	.news-article p {
+		margin: 0 0 0.75rem;
+		color: rgb(var(--gray-dark));
+		line-height: 1.6;
+	}
+	.news-article .news-meta {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		font-size: 0.85rem;
+		color: rgb(var(--gray));
+	}
+	.news-article .news-meta a {
+		color: var(--accent);
+		text-decoration: none;
+		font-weight: 600;
+	}
+	.news-article .news-meta a:hover {
+		text-decoration: underline;
+	}
+</style>
+
+<script>
+	const section = document.getElementById('daily-news')!;
+	const base = section.dataset.base ?? '';
+	const loadingEl = document.getElementById('news-loading')!;
+	const errorEl = document.getElementById('news-error')!;
+	const container = document.getElementById('news-container')!;
+
+	interface NewsArticle {
+		id: string;
+		title: string;
+		summary: string;
+		url: string;
+		source: string;
+		publishedDate?: string;
+	}
+
+	interface NewsManifest {
+		latest: string;
+		dates: string[];
+	}
+
+	async function loadNews(): Promise<void> {
+		try {
+			// 1. Fetch manifest
+			const manifestRes = await fetch(`${base}/data/manifest.json`, { cache: 'no-store' });
+			if (!manifestRes.ok) throw new Error('Could not load news manifest');
+			const manifest: NewsManifest = await manifestRes.json();
+
+			// 2. Fetch the latest day's articles
+			const newsRes = await fetch(`${base}/data/news/${manifest.latest}.json`, { cache: 'no-store' });
+			if (!newsRes.ok) throw new Error(`Could not load news for ${manifest.latest}`);
+			const articles: NewsArticle[] = await newsRes.json();
+
+			// 3. Render
+			loadingEl.style.display = 'none';
+
+			if (articles.length === 0) {
+				errorEl.textContent = 'No articles available today. Check back tomorrow!';
+				errorEl.style.display = 'block';
+				return;
+			}
+
+			container.innerHTML = articles
+				.map(
+					(a) => `
+				<article class="news-article">
+					<h3>${escapeHtml(a.title)}</h3>
+					<p>${escapeHtml(a.summary)}</p>
+					<div class="news-meta">
+						<span>${escapeHtml(a.source)}</span>
+						<a href="${escapeHtml(a.url)}" target="_blank" rel="noopener noreferrer">Read full story →</a>
+					</div>
+				</article>`
+				)
+				.join('');
+		} catch (err) {
+			loadingEl.style.display = 'none';
+			errorEl.textContent = `Failed to load news: ${(err as Error).message}`;
+			errorEl.style.display = 'block';
+		}
+	}
+
+	function escapeHtml(text: string): string {
+		const el = document.createElement('span');
+		el.textContent = text;
+		return el.innerHTML;
+	}
+
+	loadNews();
+</script>

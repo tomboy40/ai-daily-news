@@ -10,5 +10,7 @@ import { defineConfig } from 'astro/config';
 export default defineConfig({
 	site: 'https://example.github.io',
 	base: '/ai-daily-news',
+	output: 'static',
+	trailingSlash: 'always',
 	integrations: [mdx(), sitemap()],
 });
