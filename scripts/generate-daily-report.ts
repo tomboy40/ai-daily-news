@@ -2,6 +2,7 @@ import "dotenv/config";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import Parser from "rss-parser";
 
@@ -9,14 +10,31 @@ import Parser from "rss-parser";
 // Types
 // ---------------------------------------------------------------------------
 
-interface FeedConfig {
+interface WebsiteSource {
+  url: string;
+  /** Human-readable name shown in the report. Falls back to the URL. */
+  title?: string;
+}
+
+interface CategoryConfig {
   name: string;
-  feeds: string[];
+  /** RSS / Atom feed URLs. */
+  feeds?: string[];
+  /** Arbitrary website URLs to scrape. */
+  websites?: WebsiteSource[];
+}
+
+interface LlmConfig {
+  /** Model identifier, e.g. "gpt-4o-mini", "llama3", "mistral". */
+  model: string;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 interface InterestsConfig {
+  llm?: LlmConfig;
   maxArticlesPerFeed: number;
-  categories: FeedConfig[];
+  categories: CategoryConfig[];
 }
 
 interface Article {
@@ -71,20 +89,25 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen).trimEnd() + "…";
 }
 
+/** Collapse whitespace runs and trim. */
+function normalizeWhitespace(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 // ---------------------------------------------------------------------------
 // RSS Fetching
 // ---------------------------------------------------------------------------
 
-async function fetchCategory(
+async function fetchRssFeeds(
   parser: Parser,
-  category: FeedConfig,
+  feeds: string[],
   maxPerFeed: number
-): Promise<CategoryArticles> {
+): Promise<Article[]> {
   const articles: Article[] = [];
 
-  for (const feedUrl of category.feeds) {
+  for (const feedUrl of feeds) {
     try {
-      console.log(`  ↳ Fetching ${feedUrl}`);
+      console.log(`  ↳ [rss]  ${feedUrl}`);
       const feed = await parser.parseURL(feedUrl);
       const feedTitle = feed.title ?? feedUrl;
 
@@ -102,11 +125,170 @@ async function fetchCategory(
         });
       }
     } catch (err) {
-      console.warn(`  ⚠ Failed to fetch ${feedUrl}: ${(err as Error).message}`);
+      console.warn(`  ⚠ Failed to fetch feed ${feedUrl}: ${(err as Error).message}`);
     }
   }
 
-  return { category: category.name, articles };
+  return articles;
+}
+
+// ---------------------------------------------------------------------------
+// Website Scraping
+// ---------------------------------------------------------------------------
+
+const WEB_FETCH_TIMEOUT_MS = 20_000;
+const USER_AGENT =
+  "Mozilla/5.0 (compatible; AIDailyNewsBot/1.0; +https://github.com)";
+
+async function fetchWebsite(site: WebsiteSource): Promise<Article[]> {
+  const articles: Article[] = [];
+  const label = site.title ?? site.url;
+
+  try {
+    console.log(`  ↳ [web]  ${site.url}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS);
+
+    const res = await fetch(site.url, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      console.warn(`  ⚠ HTTP ${res.status} for ${site.url}`);
+      return articles;
+    }
+
+    const html = await res.text();
+    const $ = cheerio.load(html);
+
+    // Remove noise
+    $("script, style, nav, footer, header, aside, iframe, noscript").remove();
+
+    // Strategy 1: look for <article> elements (common in blogs / news sites)
+    const articleEls = $("article");
+    if (articleEls.length > 0) {
+      articleEls.each((_i, el) => {
+        const $el = $(el);
+        // Try to find a heading inside the article
+        const heading =
+          $el.find("h1, h2, h3").first().text().trim() || "Untitled";
+        // Try to find a link
+        const link = $el.find("a[href]").first().attr("href") ?? site.url;
+        const resolvedLink = link.startsWith("http")
+          ? link
+          : new URL(link, site.url).href;
+        // Extract text content
+        const text = normalizeWhitespace($el.text());
+
+        if (text.length > 30) {
+          articles.push({
+            title: heading,
+            link: resolvedLink,
+            snippet: truncate(text, 500),
+            pubDate: new Date().toISOString(),
+            source: label,
+          });
+        }
+      });
+    }
+
+    // Strategy 2: if no <article>s found, fall back to the page's main content
+    if (articles.length === 0) {
+      const main = $("main").length ? $("main") : $("body");
+      const pageTitle =
+        $("title").text().trim() ||
+        $("h1").first().text().trim() ||
+        label;
+      const text = normalizeWhitespace(main.text());
+
+      if (text.length > 30) {
+        articles.push({
+          title: pageTitle,
+          link: site.url,
+          snippet: truncate(text, 1500),
+          pubDate: new Date().toISOString(),
+          source: label,
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(`  ⚠ Failed to scrape ${site.url}: ${(err as Error).message}`);
+  }
+
+  return articles;
+}
+
+async function fetchWebsites(
+  websites: WebsiteSource[]
+): Promise<Article[]> {
+  const all: Article[] = [];
+  for (const site of websites) {
+    const articles = await fetchWebsite(site);
+    all.push(...articles);
+  }
+  return all;
+}
+
+// ---------------------------------------------------------------------------
+// Category Orchestrator
+// ---------------------------------------------------------------------------
+
+async function fetchCategory(
+  parser: Parser,
+  category: CategoryConfig,
+  maxPerFeed: number
+): Promise<CategoryArticles> {
+  const rssArticles = category.feeds?.length
+    ? await fetchRssFeeds(parser, category.feeds, maxPerFeed)
+    : [];
+
+  const webArticles = category.websites?.length
+    ? await fetchWebsites(category.websites)
+    : [];
+
+  return {
+    category: category.name,
+    articles: [...rssArticles, ...webArticles],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// LLM Client
+// ---------------------------------------------------------------------------
+
+/**
+ * Build an OpenAI-compatible client.
+ *
+ * Env-var precedence (highest → lowest):
+ *   LLM_API_KEY  →  OPENAI_API_KEY
+ *   LLM_BASE_URL →  (default: https://api.openai.com/v1)
+ *
+ * This means you can point at *any* provider that exposes the
+ * OpenAI-compatible `/v1/chat/completions` endpoint:
+ *   - OpenAI          (default)
+ *   - Ollama          LLM_BASE_URL=http://localhost:11434/v1
+ *   - Together AI     LLM_BASE_URL=https://api.together.xyz/v1
+ *   - Groq            LLM_BASE_URL=https://api.groq.com/openai/v1
+ *   - Anyscale / vLLM / LiteLLM / etc.
+ */
+function createLlmClient(): OpenAI {
+  const apiKey = process.env.LLM_API_KEY ?? process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.error(
+      "❌ Neither LLM_API_KEY nor OPENAI_API_KEY is set. Exiting."
+    );
+    process.exit(1);
+  }
+
+  const baseURL = process.env.LLM_BASE_URL; // undefined → SDK default
+
+  if (baseURL) {
+    console.log(`🔗 LLM base URL: ${baseURL}`);
+  }
+
+  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
 }
 
 // ---------------------------------------------------------------------------
@@ -131,15 +313,19 @@ function buildPrompt(data: CategoryArticles[]): string {
 }
 
 async function summarize(
-  openai: OpenAI,
+  client: OpenAI,
+  llmConfig: LlmConfig,
   data: CategoryArticles[]
 ): Promise<string> {
   const userPrompt = buildPrompt(data);
+  const model = process.env.LLM_MODEL ?? llmConfig.model;
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.4,
-    max_tokens: 4000,
+  console.log(`🤖 Summarizing with model: ${model}`);
+
+  const response = await client.chat.completions.create({
+    model,
+    temperature: llmConfig.temperature ?? 0.4,
+    max_tokens: llmConfig.maxTokens ?? 4000,
     messages: [
       {
         role: "system",
@@ -184,24 +370,23 @@ function writeDailyPost(markdownBody: string): string {
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  // Validate env
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    console.error("❌ OPENAI_API_KEY is not set. Exiting.");
-    process.exit(1);
-  }
-
   // Load config
   const configPath = path.join(ROOT, "interests.json");
   const config: InterestsConfig = JSON.parse(
     fs.readFileSync(configPath, "utf-8")
   );
 
+  const llmConfig: LlmConfig = config.llm ?? { model: "gpt-4o-mini" };
+
   console.log(`📰 AI Daily News Generator — ${todayPretty()}`);
   console.log(`   Categories: ${config.categories.length}`);
-  console.log(`   Max articles per feed: ${config.maxArticlesPerFeed}\n`);
+  console.log(`   Max articles per feed: ${config.maxArticlesPerFeed}`);
+  console.log(`   LLM model: ${process.env.LLM_MODEL ?? llmConfig.model}\n`);
 
-  // Fetch RSS
+  // Build LLM client (validates API key)
+  const client = createLlmClient();
+
+  // Fetch all sources
   const parser = new Parser({ timeout: 15_000 });
   const allData: CategoryArticles[] = [];
 
@@ -216,14 +401,14 @@ async function main(): Promise<void> {
 
   if (totalArticles === 0) {
     console.warn("⚠ No articles fetched. Writing an empty report.");
-    writeDailyPost("No articles were available today. Please check the RSS feed configuration.");
+    writeDailyPost(
+      "No articles were available today. Please check the feed and website configuration."
+    );
     return;
   }
 
-  // Summarize with AI
-  console.log("🤖 Summarizing with OpenAI…");
-  const openai = new OpenAI({ apiKey });
-  const summary = await summarize(openai, allData);
+  // Summarize
+  const summary = await summarize(client, llmConfig, allData);
 
   // Write output
   writeDailyPost(summary);

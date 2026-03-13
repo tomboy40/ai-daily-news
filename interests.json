@@ -1,4 +1,9 @@
 {
+  "llm": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.4,
+    "maxTokens": 4000
+  },
   "maxArticlesPerFeed": 5,
   "categories": [
     {
@@ -6,6 +11,12 @@
       "feeds": [
         "https://feeds.arstechnica.com/arstechnica/technology-lab",
         "https://www.technologyreview.com/feed/"
+      ],
+      "websites": [
+        {
+          "url": "https://openai.com/blog",
+          "title": "OpenAI Blog"
+        }
       ]
     },
     {
@@ -20,6 +31,12 @@
       "feeds": [
         "https://www.nasa.gov/rss/dyn/breaking_news.rss",
         "https://www.newscientist.com/section/news/feed/"
+      ],
+      "websites": [
+        {
+          "url": "https://www.space.com/news",
+          "title": "Space.com News"
+        }
       ]
     }
   ]
