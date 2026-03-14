@@ -59,9 +59,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
 const CONTENT_DIR = path.join(ROOT, "src", "content", "blog");
-const DATA_DIR = path.join(ROOT, "public", "data");
-const NEWS_DIR = path.join(DATA_DIR, "news");
-const MANIFEST_PATH = path.join(DATA_DIR, "manifest.json");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -344,80 +341,6 @@ async function summarize(
 }
 
 // ---------------------------------------------------------------------------
-// JSON Data Writer
-// ---------------------------------------------------------------------------
-
-interface JsonNewsArticle {
-  id: string;
-  title: string;
-  summary: string;
-  url: string;
-  source: string;
-  publishedDate: string;
-}
-
-/**
- * Write the daily news as a JSON file to public/data/news/YYYY-MM-DD.json
- * and update public/data/manifest.json so the frontend can discover it.
- */
-function writeDailyJson(articles: JsonNewsArticle[]): void {
-  const slug = todaySlug();
-
-  // Ensure directories exist
-  fs.mkdirSync(NEWS_DIR, { recursive: true });
-
-  // Write daily JSON
-  const newsPath = path.join(NEWS_DIR, `${slug}.json`);
-  fs.writeFileSync(newsPath, JSON.stringify(articles, null, 2), "utf-8");
-  console.log(`✅ JSON written to ${newsPath}`);
-
-  // Update manifest
-  let manifest: { latest: string; dates: string[] } = { latest: slug, dates: [] };
-  if (fs.existsSync(MANIFEST_PATH)) {
-    try {
-      manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, "utf-8"));
-    } catch {
-      // If the file is malformed, start fresh
-    }
-  }
-
-  manifest.latest = slug;
-  if (!manifest.dates.includes(slug)) {
-    manifest.dates.unshift(slug);
-  }
-  // Keep the manifest sorted (newest first)
-  manifest.dates.sort((a, b) => b.localeCompare(a));
-
-  fs.writeFileSync(MANIFEST_PATH, JSON.stringify(manifest, null, 2), "utf-8");
-  console.log(`✅ Manifest updated at ${MANIFEST_PATH}`);
-}
-
-/**
- * Convert fetched CategoryArticles into the flat JsonNewsArticle[] format
- * used by the static JSON data layer.
- */
-function toJsonArticles(allData: CategoryArticles[]): JsonNewsArticle[] {
-  let counter = 0;
-  const slug = todaySlug();
-  const articles: JsonNewsArticle[] = [];
-
-  for (const cat of allData) {
-    for (const a of cat.articles) {
-      articles.push({
-        id: `${slug}-${counter++}`,
-        title: a.title,
-        summary: a.snippet,
-        url: a.link,
-        source: a.source,
-        publishedDate: a.pubDate || new Date().toISOString(),
-      });
-    }
-  }
-
-  return articles;
-}
-
-// ---------------------------------------------------------------------------
 // Markdown File Writer
 // ---------------------------------------------------------------------------
 
@@ -482,7 +405,6 @@ async function main(): Promise<void> {
     writeDailyPost(
       "No articles were available today. Please check the feed and website configuration."
     );
-    writeDailyJson([]);
     return;
   }
 
@@ -545,7 +467,6 @@ async function main(): Promise<void> {
 
   // Write output
   writeDailyPost(fullReport);
-  writeDailyJson(toJsonArticles(allData));
   console.log("🎉 Done!");
 }
 
