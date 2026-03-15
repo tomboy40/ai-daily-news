@@ -2,29 +2,13 @@ import "dotenv/config";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import * as cheerio from "cheerio";
 import OpenAI from "openai";
-import Parser from "rss-parser";
 import { runDailyNewsPipeline } from "../src/pipelines/daily-news.js";
 import { translateToChineseMarkdown } from "../src/services/translation.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-interface WebsiteSource {
-  url: string;
-  /** Human-readable name shown in the report. Falls back to the URL. */
-  title?: string;
-}
-
-interface CategoryConfig {
-  name: string;
-  /** RSS / Atom feed URLs. */
-  feeds?: string[];
-  /** Arbitrary website URLs to scrape. */
-  websites?: WebsiteSource[];
-}
 
 interface LlmConfig {
   /** Model identifier, e.g. "gpt-4o-mini", "llama3", "mistral". */
@@ -35,21 +19,9 @@ interface LlmConfig {
 
 interface InterestsConfig {
   llm?: LlmConfig;
-  maxArticlesPerFeed: number;
-  categories: CategoryConfig[];
-}
-
-interface Article {
-  title: string;
-  link: string;
-  snippet: string;
-  pubDate: string;
-  source: string;
-}
-
-interface CategoryArticles {
-  category: string;
-  articles: Article[];
+  maxResultsPerCategory: number;
+  /** Simple list of topic / interest strings to search for via Tavily. */
+  categories: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -80,180 +52,6 @@ function todayPretty(): string {
     month: "long",
     day: "numeric",
   });
-}
-
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, "").trim();
-}
-
-function truncate(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen).trimEnd() + "…";
-}
-
-/** Collapse whitespace runs and trim. */
-function normalizeWhitespace(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-// ---------------------------------------------------------------------------
-// RSS Fetching
-// ---------------------------------------------------------------------------
-
-async function fetchRssFeeds(
-  parser: Parser,
-  feeds: string[],
-  maxPerFeed: number
-): Promise<Article[]> {
-  const articles: Article[] = [];
-
-  for (const feedUrl of feeds) {
-    try {
-      console.log(`  ↳ [rss]  ${feedUrl}`);
-      const feed = await parser.parseURL(feedUrl);
-      const feedTitle = feed.title ?? feedUrl;
-
-      const items = (feed.items ?? []).slice(0, maxPerFeed);
-      for (const item of items) {
-        articles.push({
-          title: item.title ?? "Untitled",
-          link: item.link ?? "",
-          snippet: truncate(
-            stripHtml(item.contentSnippet ?? item.content ?? ""),
-            500
-          ),
-          pubDate: item.pubDate ?? item.isoDate ?? "",
-          source: feedTitle,
-        });
-      }
-    } catch (err) {
-      console.warn(`  ⚠ Failed to fetch feed ${feedUrl}: ${(err as Error).message}`);
-    }
-  }
-
-  return articles;
-}
-
-// ---------------------------------------------------------------------------
-// Website Scraping
-// ---------------------------------------------------------------------------
-
-const WEB_FETCH_TIMEOUT_MS = 20_000;
-const USER_AGENT =
-  "Mozilla/5.0 (compatible; AIDailyNewsBot/1.0; +https://github.com)";
-
-async function fetchWebsite(site: WebsiteSource): Promise<Article[]> {
-  const articles: Article[] = [];
-  const label = site.title ?? site.url;
-
-  try {
-    console.log(`  ↳ [web]  ${site.url}`);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), WEB_FETCH_TIMEOUT_MS);
-
-    const res = await fetch(site.url, {
-      headers: { "User-Agent": USER_AGENT },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      console.warn(`  ⚠ HTTP ${res.status} for ${site.url}`);
-      return articles;
-    }
-
-    const html = await res.text();
-    const $ = cheerio.load(html);
-
-    // Remove noise
-    $("script, style, nav, footer, header, aside, iframe, noscript").remove();
-
-    // Strategy 1: look for <article> elements (common in blogs / news sites)
-    const articleEls = $("article");
-    if (articleEls.length > 0) {
-      articleEls.each((_i, el) => {
-        const $el = $(el);
-        // Try to find a heading inside the article
-        const heading =
-          $el.find("h1, h2, h3").first().text().trim() || "Untitled";
-        // Try to find a link
-        const link = $el.find("a[href]").first().attr("href") ?? site.url;
-        const resolvedLink = link.startsWith("http")
-          ? link
-          : new URL(link, site.url).href;
-        // Extract text content
-        const text = normalizeWhitespace($el.text());
-
-        if (text.length > 30) {
-          articles.push({
-            title: heading,
-            link: resolvedLink,
-            snippet: truncate(text, 500),
-            pubDate: new Date().toISOString(),
-            source: label,
-          });
-        }
-      });
-    }
-
-    // Strategy 2: if no <article>s found, fall back to the page's main content
-    if (articles.length === 0) {
-      const main = $("main").length ? $("main") : $("body");
-      const pageTitle =
-        $("title").text().trim() ||
-        $("h1").first().text().trim() ||
-        label;
-      const text = normalizeWhitespace(main.text());
-
-      if (text.length > 30) {
-        articles.push({
-          title: pageTitle,
-          link: site.url,
-          snippet: truncate(text, 1500),
-          pubDate: new Date().toISOString(),
-          source: label,
-        });
-      }
-    }
-  } catch (err) {
-    console.warn(`  ⚠ Failed to scrape ${site.url}: ${(err as Error).message}`);
-  }
-
-  return articles;
-}
-
-async function fetchWebsites(
-  websites: WebsiteSource[]
-): Promise<Article[]> {
-  const all: Article[] = [];
-  for (const site of websites) {
-    const articles = await fetchWebsite(site);
-    all.push(...articles);
-  }
-  return all;
-}
-
-// ---------------------------------------------------------------------------
-// Category Orchestrator
-// ---------------------------------------------------------------------------
-
-async function fetchCategory(
-  parser: Parser,
-  category: CategoryConfig,
-  maxPerFeed: number
-): Promise<CategoryArticles> {
-  const rssArticles = category.feeds?.length
-    ? await fetchRssFeeds(parser, category.feeds, maxPerFeed)
-    : [];
-
-  const webArticles = category.websites?.length
-    ? await fetchWebsites(category.websites)
-    : [];
-
-  return {
-    category: category.name,
-    articles: [...rssArticles, ...webArticles],
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -291,54 +89,6 @@ function createLlmClient(): OpenAI {
   }
 
   return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
-}
-
-// ---------------------------------------------------------------------------
-// AI Summarization
-// ---------------------------------------------------------------------------
-
-function buildPrompt(data: CategoryArticles[]): string {
-  let prompt = `You are a professional news editor. Given the following raw articles organized by category, produce an engaging daily briefing in **Markdown** format.\n\nRules:\n- For each category, write a short section header (## Category Name).\n- Under each category, summarize the top stories in 2-3 sentences each.\n- At the end of each summary, include a link to the original article as "[Read more →](url)".\n- Do NOT invent information. Only summarize what is provided.\n- Keep the tone professional yet accessible.\n- If a category has no articles, write "No articles available today."\n\n---\n\n`;
-
-  for (const cat of data) {
-    prompt += `### Category: ${cat.category}\n\n`;
-    if (cat.articles.length === 0) {
-      prompt += "(no articles)\n\n";
-      continue;
-    }
-    for (const a of cat.articles) {
-      prompt += `**${a.title}**\nSource: ${a.source}\nURL: ${a.link}\nSnippet: ${a.snippet}\n\n`;
-    }
-  }
-
-  return prompt;
-}
-
-async function summarize(
-  client: OpenAI,
-  llmConfig: LlmConfig,
-  data: CategoryArticles[]
-): Promise<string> {
-  const userPrompt = buildPrompt(data);
-  const model = process.env.LLM_MODEL ?? llmConfig.model;
-
-  console.log(`🤖 Summarizing with model: ${model}`);
-
-  const response = await client.chat.completions.create({
-    model,
-    temperature: llmConfig.temperature ?? 0.4,
-    max_tokens: llmConfig.maxTokens ?? 4000,
-    messages: [
-      {
-        role: "system",
-        content:
-          "You are an expert news summarizer. You ONLY use the provided source material. Never add information that is not present in the input.",
-      },
-      { role: "user", content: userPrompt },
-    ],
-  });
-
-  return response.choices[0]?.message?.content ?? "";
 }
 
 // ---------------------------------------------------------------------------
@@ -387,89 +137,53 @@ async function main(): Promise<void> {
 
   console.log(`📰 AI Daily News Generator — ${todayPretty()}`);
   console.log(`   Categories: ${config.categories.length}`);
-  console.log(`   Max articles per feed: ${config.maxArticlesPerFeed}`);
+  console.log(`   Max results per category: ${config.maxResultsPerCategory}`);
   console.log(`   LLM model: ${process.env.LLM_MODEL ?? llmConfig.model}\n`);
 
   // Build LLM client (validates API key)
   const client = createLlmClient();
 
-  // Fetch all sources
-  const parser = new Parser({ timeout: 15_000 });
-  const allData: CategoryArticles[] = [];
+  // ── Tavily-powered search & hierarchical summarization ──────────────────
+  console.log("🔎 Running Tavily search pipeline…");
 
-  for (const cat of config.categories) {
-    console.log(`📂 ${cat.name}`);
-    const result = await fetchCategory(parser, cat, config.maxArticlesPerFeed);
-    allData.push(result);
-  }
+  const { dailySummary, categorizedNews } = await runDailyNewsPipeline(
+    client,
+    llmConfig,
+    config.categories,
+    config.maxResultsPerCategory
+  );
 
-  const totalArticles = allData.reduce((s, c) => s + c.articles.length, 0);
-  console.log(`\n📊 Fetched ${totalArticles} articles total.\n`);
+  const totalArticles = Object.values(categorizedNews).reduce(
+    (s, arr) => s + arr.length,
+    0
+  );
+  console.log(`📊 ${totalArticles} articles enriched with TL;DRs.`);
 
   if (totalArticles === 0) {
     console.warn("⚠ No articles fetched. Writing an empty report.");
     writeDailyPost(
-      "No articles were available today. Please check the feed and website configuration."
+      "No articles were available today. Please check your categories and Tavily API key."
     );
     return;
   }
 
-  // Summarize (existing RSS/web pipeline)
-  const summary = await summarize(client, llmConfig, allData);
+  // Build the report with Daily Glance + per-category TL;DRs
+  const parts: string[] = [];
+  parts.push("## 🗞️ Daily Glance\n");
+  parts.push(dailySummary);
+  parts.push("");
 
-  // ── Tavily-powered search & hierarchical summarization ──────────────────
-  let tavilySection = "";
-  if (process.env.TAVILY_API_KEY) {
-    console.log("\n🔎 Running Tavily search pipeline…");
-    const categoryNames = config.categories.map((c) => c.name);
-    try {
-      const { dailySummary, categorizedNews } = await runDailyNewsPipeline(
-        client,
-        llmConfig,
-        categoryNames,
-        config.maxArticlesPerFeed
-      );
-
-      const tavilyArticleCount = Object.values(categorizedNews).reduce(
-        (s, arr) => s + arr.length,
-        0
-      );
-      console.log(
-        `📊 Tavily pipeline: ${tavilyArticleCount} articles enriched with TL;DRs.`
-      );
-
-      // Build the Tavily section with Daily Glance + per-category TL;DRs
-      const parts: string[] = [];
-      parts.push("## 🗞️ Daily Glance\n");
-      parts.push(dailySummary);
-      parts.push("");
-
-      for (const [cat, articles] of Object.entries(categorizedNews)) {
-        if (articles.length === 0) continue;
-        parts.push(`### ${cat}\n`);
-        for (const a of articles) {
-          parts.push(`**${a.title}**`);
-          parts.push(`> ${a.tldr}`);
-          parts.push(`[Read more →](${a.url})\n`);
-        }
-      }
-
-      tavilySection = parts.join("\n");
-    } catch (err) {
-      console.warn(
-        `⚠ Tavily pipeline failed: ${(err as Error).message}. Continuing with RSS/web results only.`
-      );
+  for (const [cat, articles] of Object.entries(categorizedNews)) {
+    if (articles.length === 0) continue;
+    parts.push(`### ${cat}\n`);
+    for (const a of articles) {
+      parts.push(`**${a.title}**`);
+      parts.push(`> ${a.tldr}`);
+      parts.push(`[Read more →](${a.url})\n`);
     }
-  } else {
-    console.log(
-      "\nℹ TAVILY_API_KEY not set — skipping Tavily search pipeline."
-    );
   }
 
-  // Combine both pipelines into the final report
-  const fullReport = tavilySection
-    ? `${tavilySection}\n\n---\n\n${summary}`
-    : summary;
+  const fullReport = parts.join("\n");
 
   // ── Translate to Chinese ─────────────────────────────────────────────────
   console.log("\n🌐 Translating report to Chinese…");
@@ -487,7 +201,7 @@ async function main(): Promise<void> {
     : fullReport;
 
   // Collect category tags from the config
-  const tags = config.categories.map((c) => c.name);
+  const tags = config.categories;
 
   // Write output
   writeDailyPost(finalReport, tags);
