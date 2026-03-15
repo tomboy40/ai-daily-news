@@ -1,9 +1,7 @@
 ---
-import { Image } from 'astro:assets';
 import { getCollection } from 'astro:content';
 import BaseHead from '../../components/BaseHead.astro';
 import Footer from '../../components/Footer.astro';
-import FormattedDate from '../../components/FormattedDate.astro';
 import Header from '../../components/Header.astro';
 import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
 
@@ -17,71 +15,105 @@ const posts = (await getCollection('blog')).sort(
 	<head>
 		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
 		<style>
-			main {
-				width: 960px;
+			.page-masthead {
+				text-align: center;
+				padding: 2rem 0 1.5rem;
+				border-bottom: 4px double var(--border-heavy);
+				margin-bottom: 2rem;
 			}
+
+			.page-masthead p {
+				margin: 0;
+				color: var(--text-muted);
+				font-style: italic;
+			}
+
+			.archive-index {
+				border: 1px solid var(--border-light);
+				background: var(--bg-card);
+			}
+
 			ul {
-				display: flex;
-				flex-wrap: wrap;
-				gap: 2rem;
-				list-style-type: none;
+				list-style: none;
 				margin: 0;
 				padding: 0;
 			}
-			ul li {
-				width: calc(50% - 1rem);
+
+			li + li {
+				border-top: 1px solid var(--border-light);
 			}
-			ul li * {
+
+			.archive-row {
+				display: flex;
+				align-items: flex-start;
+				gap: 1.5rem;
+				padding: 1.5rem;
 				text-decoration: none;
-				transition: 0.2s ease;
+				color: inherit;
 			}
-			ul li:first-child {
-				width: 100%;
-				margin-bottom: 1rem;
+
+			.archive-date {
+				width: 72px;
+				flex: 0 0 72px;
 				text-align: center;
+				font-family: var(--font-utility);
+				border-right: 1px solid var(--border-light);
+				padding-right: 1rem;
 			}
-			ul li:first-child img {
-				width: 100%;
-			}
-			ul li:first-child .title {
-				font-size: 2.369rem;
-			}
-			ul li img {
-				margin-bottom: 0.5rem;
-				border-radius: 12px;
-			}
-			ul li a {
+
+			.archive-date-day {
 				display: block;
-			}
-			.title {
-				margin: 0;
-				color: rgb(var(--black));
+				font-size: 2rem;
+				font-weight: 700;
 				line-height: 1;
+				color: var(--accent);
 			}
-			.date {
+
+			.archive-date-weekday {
+				display: block;
+				margin-top: 0.35rem;
+				font-size: 0.72rem;
+				letter-spacing: 0.18em;
+				text-transform: uppercase;
+				color: var(--text-muted);
+			}
+
+			.archive-copy {
+				flex: 1;
+			}
+
+			.archive-copy h2 {
 				margin: 0;
-				color: rgb(var(--gray));
+				font-size: 1.75rem;
+				font-family: var(--font-headline);
 			}
-			ul li a:hover h4,
-			ul li a:hover .date {
-				color: rgb(var(--accent));
+
+			.archive-meta {
+				margin: 0.5rem 0 0;
+				font-family: var(--font-utility);
+				font-size: 0.78rem;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--text-muted);
 			}
-			ul a:hover img {
-				box-shadow: var(--box-shadow);
+
+			.archive-row:hover h2 {
+				text-decoration: underline;
 			}
+
 			@media (max-width: 720px) {
-				ul {
-					gap: 0.5em;
+				.archive-row {
+					gap: 1rem;
+					padding: 1.1rem;
 				}
-				ul li {
-					width: 100%;
-					text-align: center;
+
+				.archive-date {
+					width: 60px;
+					flex-basis: 60px;
 				}
-				ul li:first-child {
-					margin-bottom: 0;
-				}
-				ul li:first-child .title {
-					font-size: 1.563em;
+
+				.archive-copy h2 {
+					font-size: 1.4rem;
 				}
 			}
 		</style>
@@ -89,19 +121,34 @@ const posts = (await getCollection('blog')).sort(
 	<body>
 		<Header />
 		<main>
-			<section>
+			<div class="page-masthead">
+				<h1>Archive</h1>
+				<p>Back issues and prior AI briefings, organized like a newspaper index.</p>
+			</div>
+			<section class="archive-index">
 				<ul>
 					{
 						posts.map((post) => (
 							<li>
-								<a href={`${import.meta.env.BASE_URL}blog/${post.id}/`}>
-									{post.data.heroImage && (
-										<Image width={720} height={360} src={post.data.heroImage} alt="" />
-									)}
-									<h4 class="title">{post.data.title}</h4>
-									<p class="date">
-										<FormattedDate date={post.data.pubDate} />
-									</p>
+								<a class="archive-row" href={`${import.meta.env.BASE_URL}blog/${post.id}/`}>
+									<div class="archive-date" aria-hidden="true">
+										<span class="archive-date-day">
+											{post.data.pubDate.toLocaleDateString('en-US', { day: '2-digit' })}
+										</span>
+										<span class="archive-date-weekday">
+											{post.data.pubDate.toLocaleDateString('en-US', { weekday: 'short' })}
+										</span>
+									</div>
+									<div class="archive-copy">
+										<h2>{post.data.title}</h2>
+										<p class="archive-meta">
+											{post.data.pubDate.toLocaleDateString('en-US', {
+												month: 'long',
+												year: 'numeric',
+											})}
+											{post.data.tags.length > 0 ? `  /  ${post.data.tags.join(' / ')}` : ''}
+										</p>
+									</div>
 								</a>
 							</li>
 						))

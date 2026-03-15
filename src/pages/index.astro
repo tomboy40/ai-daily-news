@@ -13,34 +13,159 @@ import { SITE_DESCRIPTION, SITE_TITLE } from '../consts';
 	</head>
 	<body>
 		<Header />
+		<div class="top-utility-bar">
+			<div class="utility-inner">
+				<span class="utility-label">Language</span>
+				<div class="language-switcher" role="tablist" aria-label="Language switcher">
+					<button type="button" class="lang-btn active" data-lang-toggle="en" aria-pressed="true">
+						EN
+					</button>
+					<button type="button" class="lang-btn" data-lang-toggle="zh" aria-pressed="false">
+						中文
+					</button>
+				</div>
+			</div>
+		</div>
 		<main>
-			<h1>Today's AI News</h1>
-			<p class="subtitle">
-				Your AI-curated daily briefing — automatically generated and updated every day.
-			</p>
+			<div class="page-masthead" data-lang-group="en">
+				<h1>Today's AI News</h1>
+				<p class="subtitle">
+					Your AI-curated daily briefing, published in a clean editorial format each day.
+				</p>
+			</div>
+			<div class="page-masthead" data-lang-group="zh" hidden>
+				<h1>今日 AI 新闻</h1>
+				<p class="subtitle">以经典报刊版式呈现的双语 AI 每日简报。</p>
+			</div>
 			<DailyNews />
-			<p class="archive-link">
+			<p class="archive-link" data-lang-group="en">
 				Looking for older briefings? Check the <a href={`${import.meta.env.BASE_URL}blog/`}>blog archive</a>.
+			</p>
+			<p class="archive-link" data-lang-group="zh" hidden>
+				想查看往期简报？请前往<a href={`${import.meta.env.BASE_URL}blog/`}>文章归档</a>。
 			</p>
 		</main>
 		<Footer />
+		<script>
+			function initLanguageSwitcher() {
+				const root = document.documentElement;
+				const buttons = Array.from(
+					document.querySelectorAll<HTMLButtonElement>('[data-lang-toggle]'),
+				);
+				if (buttons.length === 0) return;
+
+				const applyLanguage = (lang: string) => {
+					root.dataset.activeLang = lang;
+					buttons.forEach((button) => {
+						const isActive = button.dataset.langToggle === lang;
+						button.classList.toggle('active', isActive);
+						button.setAttribute('aria-pressed', String(isActive));
+					});
+
+					document.querySelectorAll<HTMLElement>('[data-lang-group]').forEach((element) => {
+						element.hidden = element.dataset.langGroup !== lang;
+					});
+				};
+
+				buttons.forEach((button) => {
+					button.addEventListener('click', () => {
+						const lang = button.dataset.langToggle ?? 'en';
+						applyLanguage(lang);
+					});
+				});
+
+				applyLanguage(root.dataset.activeLang ?? 'en');
+			}
+
+			initLanguageSwitcher();
+			document.addEventListener('astro:after-swap', initLanguageSwitcher);
+		</script>
 	</body>
 </html>
 
 <style>
-	h1 {
-		text-align: center;
-		margin-bottom: 0.25rem;
+	.top-utility-bar {
+		padding: 0 1rem;
 	}
-	.subtitle {
+
+	.utility-inner {
+		width: min(760px, calc(100% - 2rem));
+		margin: 0 auto;
+		padding: 0.85rem 0;
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+		font-family: var(--font-utility);
+		font-size: 0.78rem;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		border-bottom: 1px solid var(--border-light);
+	}
+
+	.utility-label {
+		color: var(--text-muted);
+	}
+
+	.language-switcher {
+		display: inline-flex;
+		border: 1px solid var(--border-heavy);
+	}
+
+	.lang-btn {
+		appearance: none;
+		border: 0;
+		border-right: 1px solid var(--border-heavy);
+		background: transparent;
+		color: var(--accent);
+		padding: 0.45rem 0.95rem;
+		cursor: pointer;
+		font-family: var(--font-utility);
+		font-size: 0.78rem;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
+
+	.lang-btn:last-child {
+		border-right: 0;
+	}
+
+	.lang-btn.active {
+		background: var(--accent);
+		color: var(--bg-card);
+	}
+
+	.page-masthead {
 		text-align: center;
-		color: rgb(var(--gray));
+		padding: 2rem 0 1.5rem;
+		border-bottom: 4px double var(--border-heavy);
 		margin-bottom: 2rem;
 	}
+
+	.page-masthead h1 {
+		margin-bottom: 0.35rem;
+	}
+
+	.subtitle {
+		margin: 0;
+		color: var(--text-muted);
+		font-style: italic;
+	}
+
 	.archive-link {
 		text-align: center;
 		margin-top: 2rem;
-		font-size: 0.9rem;
-		color: rgb(var(--gray));
+		font-family: var(--font-utility);
+		font-size: 0.82rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	@media (max-width: 720px) {
+		.utility-inner {
+			flex-direction: column;
+			align-items: flex-start;
+		}
 	}
 </style>

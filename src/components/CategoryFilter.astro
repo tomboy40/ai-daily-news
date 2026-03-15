@@ -1,31 +1,32 @@
 ---
 /**
- * Interactive category-tag filter bar.
- *
- * Renders a set of toggle buttons — one per tag. Clicking a button hides or
- * shows the matching section(s) inside the `.prose` container. Sections are
- * identified by headings (h2/h3) whose text includes the tag name.
- *
- * Works entirely client-side with zero framework dependencies.
+ * Interactive category-tag filter bar rendered as segmented tabs.
  */
 interface Props {
-	tags: string[];
+	items: { label: string; match: string }[];
+	lang: 'en' | 'zh';
+	allLabel: string;
+	label: string;
 }
 
-const { tags } = Astro.props;
+const { items, lang, allLabel, label } = Astro.props;
 ---
 
-{tags.length > 0 && (
-	<div class="category-filter" data-category-filter>
-		<span class="filter-label">Filter by category:</span>
+{items.length > 0 && (
+	<div class="category-filter" data-category-filter={lang} data-lang-group={lang} hidden={lang === 'zh'}>
+		<span class="filter-label">{label}</span>
 		<div class="filter-tags">
-			{tags.map((tag) => (
+			<button class="tag-btn active" type="button" data-filter-match="__all__" aria-pressed="true">
+				{allLabel}
+			</button>
+			{items.map((item) => (
 				<button
-					class="tag-btn active"
-					data-tag={tag}
-					aria-pressed="true"
+					class="tag-btn"
+					type="button"
+					data-filter-match={item.match}
+					aria-pressed="false"
 				>
-					{tag}
+					{item.label}
 				</button>
 			))}
 		</div>
@@ -34,64 +35,77 @@ const { tags } = Astro.props;
 
 <script>
 	function initCategoryFilter(): void {
-		const filterContainer = document.querySelector('[data-category-filter]');
-		if (!filterContainer) return;
+		const filters = Array.from(document.querySelectorAll<HTMLElement>('[data-category-filter]'));
+		if (filters.length === 0) return;
 
-		const buttons = filterContainer.querySelectorAll<HTMLButtonElement>('.tag-btn');
-		const prose = document.querySelector('.prose');
-		if (!prose) return;
-
-		/**
-		 * Given a heading element, collect all sibling nodes that belong to
-		 * the same "section" (i.e. until the next heading of the same or
-		 * higher level, or the end of the container).
-		 */
 		function getSectionElements(heading: Element): Element[] {
-			const level = parseInt(heading.tagName[1], 10); // e.g. 2 for H2
+			const level = parseInt(heading.tagName[1], 10);
 			const elements: Element[] = [heading];
 			let sibling = heading.nextElementSibling;
+
 			while (sibling) {
 				if (/^H[1-6]$/.test(sibling.tagName)) {
-					const sibLevel = parseInt(sibling.tagName[1], 10);
-					if (sibLevel <= level) break;
+					const siblingLevel = parseInt(sibling.tagName[1], 10);
+					if (siblingLevel <= level) break;
 				}
 				elements.push(sibling);
 				sibling = sibling.nextElementSibling;
 			}
+
 			return elements;
 		}
 
-		/** Find all headings (h2/h3) in .prose that contain the given tag name. */
-		function findSections(tag: string): Element[] {
-			const headings = prose!.querySelectorAll('h2, h3');
+		function findSections(prose: HTMLElement, match: string): Element[] {
+			const headings = prose.querySelectorAll('h2, h3');
 			const matched: Element[] = [];
-			headings.forEach((h) => {
-				if (h.textContent?.includes(tag)) {
-					matched.push(...getSectionElements(h));
+			headings.forEach((heading) => {
+				if (heading.textContent?.includes(match)) {
+					matched.push(...getSectionElements(heading));
 				}
 			});
 			return matched;
 		}
 
-		buttons.forEach((btn) => {
-			btn.addEventListener('click', () => {
-				const tag = btn.dataset.tag!;
-				const isActive = btn.classList.toggle('active');
-				btn.setAttribute('aria-pressed', String(isActive));
+		filters.forEach((filterContainer) => {
+			if (filterContainer.dataset.bound === 'true') return;
 
-				const elements = findSections(tag);
-				elements.forEach((el) => {
-					(el as HTMLElement).style.display = isActive ? '' : 'none';
+			const lang = filterContainer.dataset.categoryFilter;
+			const article = filterContainer.closest('.daily-report');
+			const prose = article?.querySelector<HTMLElement>(`[data-news-panel="${lang}"]`);
+			const buttons = Array.from(filterContainer.querySelectorAll<HTMLButtonElement>('.tag-btn'));
+			if (!prose || buttons.length === 0) return;
+
+			const applyFilter = (match: string) => {
+				const allElements = Array.from(prose.children) as HTMLElement[];
+				allElements.forEach((element) => {
+					element.style.display = match === '__all__' ? '' : 'none';
+				});
+
+				if (match === '__all__') return;
+
+				findSections(prose, match).forEach((element) => {
+					(element as HTMLElement).style.display = '';
+				});
+			};
+
+			buttons.forEach((button) => {
+				button.addEventListener('click', () => {
+					const match = button.dataset.filterMatch ?? '__all__';
+					buttons.forEach((item) => {
+						const isActive = item === button;
+						item.classList.toggle('active', isActive);
+						item.setAttribute('aria-pressed', String(isActive));
+					});
+					applyFilter(match);
 				});
 			});
+
+			applyFilter('__all__');
+			filterContainer.dataset.bound = 'true';
 		});
 	}
 
-	// Run on initial page load. Module scripts are deferred so the DOM is
-	// already parsed when this executes.
 	initCategoryFilter();
-
-	// Also re-initialise after View-Transition navigations (if enabled).
 	document.addEventListener('astro:after-swap', initCategoryFilter);
 </script>
 
@@ -100,41 +114,59 @@ const { tags } = Astro.props;
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.5rem;
+		gap: 0.75rem;
 		margin-bottom: 1.5rem;
-		padding: 0.75rem 1rem;
-		border: 1px solid rgb(var(--gray-light));
-		border-radius: 8px;
-		background: rgb(var(--gray-light), 0.15);
 	}
+
 	.filter-label {
-		font-size: 0.85rem;
+		font-family: var(--font-utility);
+		font-size: 0.72rem;
 		font-weight: 600;
-		color: rgb(var(--gray-dark));
-		margin-right: 0.25rem;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--text-muted);
 	}
+
 	.filter-tags {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 0.4rem;
+		border: 1px solid var(--border-heavy);
 	}
+
 	.tag-btn {
 		appearance: none;
-		border: 1.5px solid rgb(var(--gray-light));
-		border-radius: 9999px;
-		padding: 0.25rem 0.75rem;
-		font-size: 0.8rem;
+		border: 0;
+		border-right: 1px solid var(--border-heavy);
+		border-radius: 0;
+		padding: 0.55rem 0.9rem;
+		font-family: var(--font-utility);
+		font-size: 0.76rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
 		cursor: pointer;
-		background: white;
-		color: rgb(var(--gray));
-		transition: all 0.15s ease;
+		background: var(--bg-card);
+		color: var(--accent);
+		transition: background-color 0.15s ease, color 0.15s ease;
 	}
+
+	.tag-btn:last-child {
+		border-right: 0;
+	}
+
 	.tag-btn.active {
 		background: var(--accent);
-		border-color: var(--accent);
-		color: white;
+		color: var(--bg-card);
 	}
+
 	.tag-btn:hover {
-		opacity: 0.85;
+		background: var(--accent);
+		color: var(--bg-card);
+	}
+
+	@media (max-width: 720px) {
+		.category-filter {
+			flex-direction: column;
+			align-items: flex-start;
+		}
 	}
 </style>
