@@ -1,0 +1,31 @@
+{
+  "name": "workspace-my-oz-ai-daily-news",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "generate": "tsx scripts/generate-daily-report.ts",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/check": "^0.9.7",
+    "@astrojs/mdx": "^5.0.0",
+    "@astrojs/rss": "^4.0.17",
+    "@astrojs/sitemap": "^3.7.1",
+    "@tavily/core": "^0.7.2",
+    "astro": "^6.0.4",
+    "dotenv": "^17.3.1",
+    "openai": "^6.27.0",
+    "sharp": "^0.34.3",
+    "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "tsx": "^4.21.0"
+  }
+}

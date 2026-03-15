@@ -1,0 +1,161 @@
+---
+import { getCollection } from 'astro:content';
+import BaseHead from '../../components/BaseHead.astro';
+import Footer from '../../components/Footer.astro';
+import Header from '../../components/Header.astro';
+import { SITE_DESCRIPTION, SITE_TITLE } from '../../consts';
+
+const posts = (await getCollection('blog')).sort(
+	(a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
+);
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<BaseHead title={SITE_TITLE} description={SITE_DESCRIPTION} />
+		<style>
+			.page-masthead {
+				text-align: center;
+				padding: 2rem 0 1.5rem;
+				border-bottom: 4px double var(--border-heavy);
+				margin-bottom: 2rem;
+			}
+
+			.page-masthead p {
+				margin: 0;
+				color: var(--text-muted);
+				font-style: italic;
+			}
+
+			.archive-index {
+				border: 1px solid var(--border-light);
+				background: var(--bg-card);
+			}
+
+			ul {
+				list-style: none;
+				margin: 0;
+				padding: 0;
+			}
+
+			li + li {
+				border-top: 1px solid var(--border-light);
+			}
+
+			.archive-row {
+				display: flex;
+				align-items: flex-start;
+				gap: 1.5rem;
+				padding: 1.5rem;
+				text-decoration: none;
+				color: inherit;
+			}
+
+			.archive-date {
+				width: 72px;
+				flex: 0 0 72px;
+				text-align: center;
+				font-family: var(--font-utility);
+				border-right: 1px solid var(--border-light);
+				padding-right: 1rem;
+			}
+
+			.archive-date-day {
+				display: block;
+				font-size: 2rem;
+				font-weight: 700;
+				line-height: 1;
+				color: var(--accent);
+			}
+
+			.archive-date-weekday {
+				display: block;
+				margin-top: 0.35rem;
+				font-size: 0.72rem;
+				letter-spacing: 0.18em;
+				text-transform: uppercase;
+				color: var(--text-muted);
+			}
+
+			.archive-copy {
+				flex: 1;
+			}
+
+			.archive-copy h2 {
+				margin: 0;
+				font-size: 1.75rem;
+				font-family: var(--font-headline);
+			}
+
+			.archive-meta {
+				margin: 0.5rem 0 0;
+				font-family: var(--font-utility);
+				font-size: 0.78rem;
+				letter-spacing: 0.08em;
+				text-transform: uppercase;
+				color: var(--text-muted);
+			}
+
+			.archive-row:hover h2 {
+				text-decoration: underline;
+			}
+
+			@media (max-width: 720px) {
+				.archive-row {
+					gap: 1rem;
+					padding: 1.1rem;
+				}
+
+				.archive-date {
+					width: 60px;
+					flex-basis: 60px;
+				}
+
+				.archive-copy h2 {
+					font-size: 1.4rem;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<Header />
+		<main>
+			<div class="page-masthead">
+				<h1>Archive</h1>
+				<p>Back issues and prior AI briefings, organized like a newspaper index.</p>
+			</div>
+			<section class="archive-index">
+				<ul>
+					{
+						posts.map((post) => (
+							<li>
+								<a class="archive-row" href={`${import.meta.env.BASE_URL}blog/${post.id}/`}>
+									<div class="archive-date" aria-hidden="true">
+										<span class="archive-date-day">
+											{post.data.pubDate.toLocaleDateString('en-US', { day: '2-digit' })}
+										</span>
+										<span class="archive-date-weekday">
+											{post.data.pubDate.toLocaleDateString('en-US', { weekday: 'short' })}
+										</span>
+									</div>
+									<div class="archive-copy">
+										<h2>{post.data.title}</h2>
+										<p class="archive-meta">
+											{post.data.pubDate.toLocaleDateString('en-US', {
+												month: 'long',
+												year: 'numeric',
+											})}
+											{post.data.tags.length > 0 ? `  /  ${post.data.tags.join(' / ')}` : ''}
+										</p>
+									</div>
+								</a>
+							</li>
+						))
+					}
+				</ul>
+			</section>
+		</main>
+		<Footer />
+	</body>
+</html>

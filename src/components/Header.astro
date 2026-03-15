@@ -1,0 +1,46 @@
+---
+import { SITE_TITLE } from '../consts';
+---
+
+<header>
+	<div class="masthead-bar">
+		<p class="edition-label">AI Daily News</p>
+		<h2><a href={import.meta.env.BASE_URL}>{SITE_TITLE}</a></h2>
+	</div>
+</header>
+
+<style>
+	header {
+		padding: 1rem;
+	}
+
+	.masthead-bar {
+		width: min(760px, calc(100% - 2rem));
+		margin: 0 auto;
+		padding: 0.75rem 0 1rem;
+		border-top: 1px solid var(--border-light);
+		border-bottom: 3px double var(--border-heavy);
+		text-align: center;
+	}
+
+	.edition-label {
+		margin: 0 0 0.35rem;
+		font-family: var(--font-utility);
+		font-size: 0.68rem;
+		letter-spacing: 0.28em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	h2 {
+		margin: 0;
+		font-size: clamp(1.35rem, 2.8vw, 2rem);
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+
+	h2 a {
+		color: var(--accent);
+		text-decoration: none;
+	}
+</style>
