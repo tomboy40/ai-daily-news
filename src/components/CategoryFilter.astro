@@ -1,0 +1,133 @@
+---
+/**
+ * Interactive category-tag filter bar.
+ *
+ * Renders a set of toggle buttons — one per tag. Clicking a button hides or
+ * shows the matching section(s) inside the `.prose` container. Sections are
+ * identified by headings (h2/h3) whose text includes the tag name.
+ *
+ * Works entirely client-side with zero framework dependencies.
+ */
+interface Props {
+	tags: string[];
+}
+
+const { tags } = Astro.props;
+---
+
+{tags.length > 0 && (
+	<div class="category-filter" data-category-filter>
+		<span class="filter-label">Filter by category:</span>
+		<div class="filter-tags">
+			{tags.map((tag) => (
+				<button
+					class="tag-btn active"
+					data-tag={tag}
+					aria-pressed="true"
+				>
+					{tag}
+				</button>
+			))}
+		</div>
+	</div>
+)}
+
+<script>
+	document.addEventListener('astro:page-load', () => {
+		const filterContainer = document.querySelector('[data-category-filter]');
+		if (!filterContainer) return;
+
+		const buttons = filterContainer.querySelectorAll<HTMLButtonElement>('.tag-btn');
+		const prose = document.querySelector('.prose');
+		if (!prose) return;
+
+		/**
+		 * Given a heading element, collect all sibling nodes that belong to
+		 * the same "section" (i.e. until the next heading of the same or
+		 * higher level, or the end of the container).
+		 */
+		function getSectionElements(heading: Element): Element[] {
+			const level = parseInt(heading.tagName[1], 10); // e.g. 2 for H2
+			const elements: Element[] = [heading];
+			let sibling = heading.nextElementSibling;
+			while (sibling) {
+				if (/^H[1-6]$/.test(sibling.tagName)) {
+					const sibLevel = parseInt(sibling.tagName[1], 10);
+					if (sibLevel <= level) break;
+				}
+				elements.push(sibling);
+				sibling = sibling.nextElementSibling;
+			}
+			return elements;
+		}
+
+		/** Find all headings (h2/h3) in .prose that contain the given tag name. */
+		function findSections(tag: string): Element[] {
+			const headings = prose!.querySelectorAll('h2, h3');
+			const matched: Element[] = [];
+			headings.forEach((h) => {
+				if (h.textContent?.includes(tag)) {
+					matched.push(...getSectionElements(h));
+				}
+			});
+			return matched;
+		}
+
+		buttons.forEach((btn) => {
+			btn.addEventListener('click', () => {
+				const tag = btn.dataset.tag!;
+				const isActive = btn.classList.toggle('active');
+				btn.setAttribute('aria-pressed', String(isActive));
+
+				const elements = findSections(tag);
+				elements.forEach((el) => {
+					(el as HTMLElement).style.display = isActive ? '' : 'none';
+				});
+			});
+		});
+	});
+</script>
+
+<style>
+	.category-filter {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.5rem;
+		margin-bottom: 1.5rem;
+		padding: 0.75rem 1rem;
+		border: 1px solid rgb(var(--gray-light));
+		border-radius: 8px;
+		background: rgb(var(--gray-light), 0.15);
+	}
+	.filter-label {
+		font-size: 0.85rem;
+		font-weight: 600;
+		color: rgb(var(--gray-dark));
+		margin-right: 0.25rem;
+	}
+	.filter-tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.4rem;
+	}
+	.tag-btn {
+		appearance: none;
+		border: 1.5px solid rgb(var(--gray-light));
+		border-radius: 9999px;
+		padding: 0.25rem 0.75rem;
+		font-size: 0.8rem;
+		cursor: pointer;
+		background: white;
+		color: rgb(var(--gray));
+		transition: all 0.15s ease;
+	}
+	.tag-btn.active {
+		background: var(--accent);
+		border-color: var(--accent);
+		color: white;
+	}
+	.tag-btn:hover {
+		opacity: 0.85;
+	}
+</style>

@@ -6,6 +6,7 @@ import * as cheerio from "cheerio";
 import OpenAI from "openai";
 import Parser from "rss-parser";
 import { runDailyNewsPipeline } from "../src/pipelines/daily-news.js";
+import { translateToChineseMarkdown } from "../src/services/translation.service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -344,16 +345,21 @@ async function summarize(
 // Markdown File Writer
 // ---------------------------------------------------------------------------
 
-function writeDailyPost(markdownBody: string): string {
+function writeDailyPost(markdownBody: string, tags: string[] = []): string {
   const slug = todaySlug();
   const filename = `${slug}-daily-report.md`;
   const filepath = path.join(CONTENT_DIR, filename);
+
+  const tagLine = tags.length > 0
+    ? `tags:\n${tags.map((t) => `  - "${t}"`).join("\n")}`
+    : "tags: []";
 
   const frontmatter = [
     "---",
     `title: "AI Daily News — ${todayPretty()}"`,
     `description: "Your AI-curated daily briefing for ${todayPretty()}."`,
     `pubDate: "${new Date().toISOString()}"`,
+    tagLine,
     "---",
   ].join("\n");
 
@@ -465,8 +471,26 @@ async function main(): Promise<void> {
     ? `${tavilySection}\n\n---\n\n${summary}`
     : summary;
 
+  // ── Translate to Chinese ─────────────────────────────────────────────────
+  console.log("\n🌐 Translating report to Chinese…");
+  let chineseReport = "";
+  try {
+    chineseReport = await translateToChineseMarkdown(client, llmConfig, fullReport);
+  } catch (err) {
+    console.warn(
+      `⚠ Translation failed: ${(err as Error).message}. Writing English-only report.`
+    );
+  }
+
+  const finalReport = chineseReport
+    ? `${fullReport}\n\n---\n\n## 🇨🇳 中文版 / Chinese Translation\n\n${chineseReport}`
+    : fullReport;
+
+  // Collect category tags from the config
+  const tags = config.categories.map((c) => c.name);
+
   // Write output
-  writeDailyPost(fullReport);
+  writeDailyPost(finalReport, tags);
   console.log("🎉 Done!");
 }
 
