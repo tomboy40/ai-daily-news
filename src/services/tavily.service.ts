@@ -20,7 +20,7 @@ function createTavilyClient() {
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey) {
     throw new Error(
-      "❌ TAVILY_API_KEY is not set. Please add it to your .env file."
+      "❌ TAVILY_API_KEY is not set. Add it to your local .env file or the GitHub Actions environment secrets."
     );
   }
   return tavily({ apiKey });
