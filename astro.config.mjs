@@ -8,7 +8,7 @@ import { defineConfig } from 'astro/config';
 // For a repo named "ai-daily-news" deployed to GitHub Pages, the site URL
 // is https://<USERNAME>.github.io and the base path is /ai-daily-news/.
 export default defineConfig({
-	site: 'https://example.github.io',
+	site: 'https://tomboy40.github.io',
 	base: '/ai-daily-news',
 	output: 'static',
 	trailingSlash: 'always',
