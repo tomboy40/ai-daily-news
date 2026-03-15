@@ -219,6 +219,7 @@ https://<YOUR_USERNAME>.github.io/ai-daily-news/
 - **Assets return 404** — Ensure `base` in `astro.config.mjs` matches your repository name (e.g., `/ai-daily-news`). This prefix is applied to all generated asset URLs.
 - **Homepage shows "No report available"** — The `DailyNews.astro` component renders the latest Markdown post from the content collection at build time. Make sure `npm run generate` has been run at least once before building (the `daily-publish.yml` workflow handles this automatically).
 - **Direct links to pages return 404** — Astro generates fully static HTML with `trailingSlash: 'always'`, so every route has its own `index.html`. This avoids the SPA routing issue entirely — no `404.html` hack or `HashRouter` is needed.
+- **Navigation links return 404** — All internal navigation links must include both the `base` path prefix and a trailing slash. Use `import.meta.env.BASE_URL` (which resolves to `/ai-daily-news/`) when constructing `href` values in components. For example, use `` href={`${import.meta.env.BASE_URL}blog/`} `` instead of `href="/blog"`. The Home link must point to `import.meta.env.BASE_URL` (i.e. `/ai-daily-news/`), not `/`.
 - **Jekyll interferes with underscored files** — The Astro build output in `dist/` may contain files starting with `_`. GitHub Pages runs Jekyll by default, which ignores these. The `actions/upload-pages-artifact` action includes a `.nojekyll` file automatically, so no manual action is required.
 
 ## Project Structure
