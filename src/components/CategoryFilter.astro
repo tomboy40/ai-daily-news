@@ -33,7 +33,7 @@ const { tags } = Astro.props;
 )}
 
 <script>
-	document.addEventListener('astro:page-load', () => {
+	function initCategoryFilter(): void {
 		const filterContainer = document.querySelector('[data-category-filter]');
 		if (!filterContainer) return;
 
@@ -85,7 +85,14 @@ const { tags } = Astro.props;
 				});
 			});
 		});
-	});
+	}
+
+	// Run on initial page load. Module scripts are deferred so the DOM is
+	// already parsed when this executes.
+	initCategoryFilter();
+
+	// Also re-initialise after View-Transition navigations (if enabled).
+	document.addEventListener('astro:after-swap', initCategoryFilter);
 </script>
 
 <style>
