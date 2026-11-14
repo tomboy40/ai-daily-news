@@ -1,0 +1,13 @@
+{
+  "llm": {
+    "model": "gpt-4o-mini",
+    "temperature": 0.4,
+    "maxTokens": 4000
+  },
+  "maxResultsPerCategory": 5,
+  "categories": [
+    "Artificial Intelligence",
+    "Software Engineering",
+    "Science & Space"
+  ]
+}
