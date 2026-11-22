@@ -1,0 +1,172 @@
+---
+/**
+ * Interactive category-tag filter bar rendered as segmented tabs.
+ */
+interface Props {
+	items: { label: string; match: string }[];
+	lang: 'en' | 'zh';
+	allLabel: string;
+	label: string;
+}
+
+const { items, lang, allLabel, label } = Astro.props;
+---
+
+{items.length > 0 && (
+	<div class="category-filter" data-category-filter={lang} data-lang-group={lang} hidden={lang === 'zh'}>
+		<span class="filter-label">{label}</span>
+		<div class="filter-tags">
+			<button class="tag-btn active" type="button" data-filter-match="__all__" aria-pressed="true">
+				{allLabel}
+			</button>
+			{items.map((item) => (
+				<button
+					class="tag-btn"
+					type="button"
+					data-filter-match={item.match}
+					aria-pressed="false"
+				>
+					{item.label}
+				</button>
+			))}
+		</div>
+	</div>
+)}
+
+<script>
+	function initCategoryFilter(): void {
+		const filters = Array.from(document.querySelectorAll<HTMLElement>('[data-category-filter]'));
+		if (filters.length === 0) return;
+
+		function getSectionElements(heading: Element): Element[] {
+			const level = parseInt(heading.tagName[1], 10);
+			const elements: Element[] = [heading];
+			let sibling = heading.nextElementSibling;
+
+			while (sibling) {
+				if (/^H[1-6]$/.test(sibling.tagName)) {
+					const siblingLevel = parseInt(sibling.tagName[1], 10);
+					if (siblingLevel <= level) break;
+				}
+				elements.push(sibling);
+				sibling = sibling.nextElementSibling;
+			}
+
+			return elements;
+		}
+
+		function findSections(prose: HTMLElement, match: string): Element[] {
+			const headings = prose.querySelectorAll('h2, h3');
+			const matched: Element[] = [];
+			headings.forEach((heading) => {
+				if (heading.textContent?.includes(match)) {
+					matched.push(...getSectionElements(heading));
+				}
+			});
+			return matched;
+		}
+
+		filters.forEach((filterContainer) => {
+			if (filterContainer.dataset.bound === 'true') return;
+
+			const lang = filterContainer.dataset.categoryFilter;
+			const article = filterContainer.closest('.daily-report');
+			const prose = article?.querySelector<HTMLElement>(`[data-news-panel="${lang}"]`);
+			const buttons = Array.from(filterContainer.querySelectorAll<HTMLButtonElement>('.tag-btn'));
+			if (!prose || buttons.length === 0) return;
+
+			const applyFilter = (match: string) => {
+				const allElements = Array.from(prose.children) as HTMLElement[];
+				allElements.forEach((element) => {
+					element.style.display = match === '__all__' ? '' : 'none';
+				});
+
+				if (match === '__all__') return;
+
+				findSections(prose, match).forEach((element) => {
+					(element as HTMLElement).style.display = '';
+				});
+			};
+
+			buttons.forEach((button) => {
+				button.addEventListener('click', () => {
+					const match = button.dataset.filterMatch ?? '__all__';
+					buttons.forEach((item) => {
+						const isActive = item === button;
+						item.classList.toggle('active', isActive);
+						item.setAttribute('aria-pressed', String(isActive));
+					});
+					applyFilter(match);
+				});
+			});
+
+			applyFilter('__all__');
+			filterContainer.dataset.bound = 'true';
+		});
+	}
+
+	initCategoryFilter();
+	document.addEventListener('astro:after-swap', initCategoryFilter);
+</script>
+
+<style>
+	.category-filter {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem;
+		margin-bottom: 1.5rem;
+	}
+
+	.filter-label {
+		font-family: var(--font-utility);
+		font-size: 0.72rem;
+		font-weight: 600;
+		letter-spacing: 0.18em;
+		text-transform: uppercase;
+		color: var(--text-muted);
+	}
+
+	.filter-tags {
+		display: flex;
+		flex-wrap: wrap;
+		border: 1px solid var(--border-heavy);
+	}
+
+	.tag-btn {
+		appearance: none;
+		border: 0;
+		border-right: 1px solid var(--border-heavy);
+		border-radius: 0;
+		padding: 0.55rem 0.9rem;
+		font-family: var(--font-utility);
+		font-size: 0.76rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		cursor: pointer;
+		background: var(--bg-card);
+		color: var(--accent);
+		transition: background-color 0.15s ease, color 0.15s ease;
+	}
+
+	.tag-btn:last-child {
+		border-right: 0;
+	}
+
+	.tag-btn.active {
+		background: var(--accent);
+		color: var(--bg-card);
+	}
+
+	.tag-btn:hover {
+		background: var(--accent);
+		color: var(--bg-card);
+	}
+
+	@media (max-width: 720px) {
+		.category-filter {
+			flex-direction: column;
+			align-items: flex-start;
+		}
+	}
+</style>
